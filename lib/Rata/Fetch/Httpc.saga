@@ -1,0 +1,13 @@
+#@ Erlang/OTP `inets:httpc` backend for the `Rata.Fetch` effect.
+module Rata.Fetch.Httpc
+
+import Rata.Fetch (Fetch, FetchError, FetchSpec, Response)
+
+#@ Perform a fetch using Erlang/OTP `inets:httpc`.
+@external("erlang", "Rata.bridge", "request")
+pub fun request : FetchSpec -> Result Response FetchError
+
+#@ Fetch handler backed by Erlang/OTP `inets:httpc`.
+pub handler httpc for Fetch {
+  fetch spec = resume request spec
+}

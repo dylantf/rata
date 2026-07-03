@@ -1,0 +1,115 @@
+#@ Pure mock handlers and response helpers for testing code that needs `Fetch`.
+module Rata.Fetch.Mock
+
+import Std.BitString as BitString
+
+import Rata.Fetch (Fetch, FetchError, FetchSpec, Header, Method, Response)
+
+#@ One mock route matched by method and exact URL.
+pub record Route {
+  method: Method,
+  url: String,
+  response: Result Response FetchError,
+}
+
+#@ Build a mock handler that returns the same successful response for every fetch.
+pub fun always : Response -> Handler Fetch
+always response = handler for Fetch {
+  fetch _ = resume Ok response
+}
+
+#@ Build a mock handler that returns the same error for every fetch.
+pub fun failing : FetchError -> Handler Fetch
+failing error = handler for Fetch {
+  fetch _ = resume Err error
+}
+
+#@ Build a mock handler that resolves fetches from the first matching route.
+pub fun routes : List Route -> Handler Fetch
+routes route_list = handler for Fetch {
+  fetch spec = resume match_route spec route_list
+}
+
+#@ Build one route from a method, exact URL, and mock result.
+pub fun route : Method -> String -> Result Response FetchError -> Route
+route method url response = Route {
+  method: method,
+  url: url,
+  response: response,
+}
+
+#@ Build one successful route from a method, exact URL, and response.
+pub fun route_response : Method -> String -> Response -> Route
+route_response method url response = route method url (Ok response)
+
+#@ Build one failing route from a method, exact URL, and error.
+pub fun route_error : Method -> String -> FetchError -> Route
+route_error method url error = route method url (Err error)
+
+#@ Build a response with no headers and no body.
+pub fun empty_response : Int -> Response
+empty_response status = Response {
+  status: status,
+  reason: "",
+  headers: [],
+  body: <<>>,
+}
+
+#@ Build a UTF-8 text response.
+pub fun text_response : Int -> String -> Response
+text_response status body = Response {
+  status: status,
+  reason: "",
+  headers: [
+    Header { name: "content-type", value: "text/plain; charset=utf-8" },
+  ],
+  body: BitString.from_string body,
+}
+
+#@ Build a response with custom headers and raw body bytes.
+pub fun bytes_response : Int -> List Header -> BitString -> Response
+bytes_response status headers body = Response {
+  status: status,
+  reason: "",
+  headers: headers,
+  body: body,
+}
+
+fun match_route : FetchSpec -> List Route -> Result Response FetchError
+match_route spec route_list = case route_list {
+  [] -> Err (unmatched_error spec)
+  route :: rest ->
+    if matches spec route then route.response
+    else match_route spec rest
+}
+
+fun matches : FetchSpec -> Route -> Bool
+matches spec route = same_method spec.method route.method
+  && spec.url == route.url
+
+fun same_method : Method -> Method -> Bool
+same_method left right = case (left, right) {
+  (GET, GET) -> True
+  (POST, POST) -> True
+  (PUT, PUT) -> True
+  (PATCH, PATCH) -> True
+  (DELETE, DELETE) -> True
+  (HEAD, HEAD) -> True
+  (OPTIONS, OPTIONS) -> True
+  _ -> False
+}
+
+fun unmatched_error : FetchSpec -> FetchError
+unmatched_error spec =
+  BackendError $"no mock route matched {method_to_string spec.method} {spec.url}"
+
+fun method_to_string : Method -> String
+method_to_string method = case method {
+  GET -> "GET"
+  POST -> "POST"
+  PUT -> "PUT"
+  PATCH -> "PATCH"
+  DELETE -> "DELETE"
+  HEAD -> "HEAD"
+  OPTIONS -> "OPTIONS"
+}

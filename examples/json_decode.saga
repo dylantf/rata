@@ -1,0 +1,39 @@
+module RataExample.JsonDecode
+
+import Rata.Fetch as Fetch
+import Rata.Fetch.Httpc as Httpc
+import Std.BitString (BitString)
+
+type DecodeError =
+  | DecodeFailed String
+  deriving (Debug)
+
+type JsonFetchError e =
+  | Transport Fetch.FetchError
+  | Status Fetch.FetchStatusError
+  | Decode e
+  deriving (Debug)
+
+fun fetch_and_decode :
+  String -> (BitString -> Result a e) -> Result a (JsonFetchError e) needs {Fetch.Fetch}
+fetch_and_decode url decode = case Fetch.get url {
+  Err error -> Err (Transport error)
+  Ok response -> case Fetch.expect_success response {
+    Err status_error -> Err (Status status_error)
+    Ok successful -> case decode successful.body {
+      Ok value -> Ok value
+      Err decode_error -> Err (Decode decode_error)
+    }
+  }
+}
+
+fun decode_body : BitString -> Result BitString DecodeError
+decode_body body = Ok body
+
+main () = {
+  # Replace this decoder with your pure Saga JSON decoder.
+  case fetch_and_decode "https://example.com/data.json" decode_body {
+    Ok _ -> dbg "decoded"
+    Err error -> dbg error
+  }
+} with Httpc.httpc

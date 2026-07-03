@@ -1,0 +1,31 @@
+module Main
+
+import Std.IO (console, println)
+import Rata.Fetch
+import Rata.Fetch.Httpc
+
+swapi_luke_url = "https://swapi.info/api/people/1"
+
+main () = {
+  println $"GET {swapi_luke_url}"
+
+  case Fetch.get swapi_luke_url with Httpc.httpc {
+    Ok response -> {
+      println $"status: {response.status}"
+      case Fetch.content_type response {
+        Just content_type -> println $"content-type: {content_type}"
+        Nothing -> println "content-type: <missing>"
+      }
+
+      case Fetch.body_text response {
+        Ok body -> println body
+        Err _ -> println "<response body was not valid UTF-8>"
+      }
+    }
+
+    Err error -> {
+      println "request failed:"
+      dbg error
+    }
+  }
+} with console

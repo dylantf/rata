@@ -1,0 +1,146 @@
+module RataFetchTest
+
+import Rata.Fetch as Fetch (Header, Response)
+import Std.BitString as BitString
+import Std.Test (
+  Testing,
+  assert_eq,
+  assert_false,
+  assert_nothing,
+  assert_true,
+  describe,
+  test,
+)
+
+pub fun tests : Unit -> Unit needs {Testing}
+tests () = {
+  describe "Rata.Fetch" (fun () -> {
+    test "builds default fetch specs" (fun () -> {
+      let spec = Fetch.get_spec "https://example.com"
+
+      assert_eq spec.url "https://example.com"
+      assert_eq (List.length spec.headers) 0
+      assert_eq (Fetch.body_to_bytes spec.body) <<>>
+      assert_nothing spec.timeout_ms
+      assert_nothing spec.follow_redirects
+    })
+
+    test "builds specs with body and options" (fun () -> {
+      let spec =
+        Fetch.post_spec "https://example.com" (Fetch.text "hello")
+          |> Fetch.with_timeout 5000
+          |> Fetch.with_redirects True
+
+      assert_eq (BitString.to_string (Fetch.body_to_bytes spec.body)) (Ok "hello")
+      assert_eq spec.timeout_ms (Just 5000)
+      assert_eq spec.follow_redirects (Just True)
+    })
+
+    test "appends and replaces headers case-insensitively" (fun () -> {
+      let spec =
+        Fetch.get_spec "https://example.com"
+          |> Fetch.with_header "Accept" "text/plain"
+          |> Fetch.with_header "X-Trace" "one"
+          |> Fetch.set_header "accept" "application/json"
+
+      let response = Fetch.Response {
+        status: Fetch.status_ok,
+        reason: "OK",
+        headers: spec.headers,
+        body: <<>>,
+      }
+
+      assert_eq (Fetch.header "ACCEPT" response) (Just "application/json")
+      assert_eq (Fetch.header "x-trace" response) (Just "one")
+      assert_eq (List.length spec.headers) 2
+    })
+
+    test "reads repeated response headers" (fun () -> {
+      let response = Fetch.Response {
+        status: Fetch.status_ok,
+        reason: "OK",
+        headers: [
+          Fetch.Header { name: "Set-Cookie", value: "a=1" },
+          Fetch.Header { name: "set-cookie", value: "b=2" },
+        ],
+        body: <<>>,
+      }
+
+      assert_eq (Fetch.headers "SET-COOKIE" response) ["a=1", "b=2"]
+    })
+
+    test "parses content helpers" (fun () -> {
+      let response = Fetch.Response {
+        status: Fetch.status_ok,
+        reason: "OK",
+        headers: [
+          Fetch.Header { name: "Content-Type", value: "text/plain" },
+          Fetch.Header { name: "Content-Length", value: "12" },
+        ],
+        body: <<>>,
+      }
+
+      assert_eq (Fetch.content_type response) (Just "text/plain")
+      assert_eq (Fetch.content_length response) (Just 12)
+    })
+
+    test "decodes response bodies as text" (fun () -> {
+      let text_response = Fetch.Response {
+        status: Fetch.status_ok,
+        reason: "OK",
+        headers: [],
+        body: BitString.from_string "hello",
+      }
+      let binary_response = Fetch.Response {
+        status: Fetch.status_ok,
+        reason: "OK",
+        headers: [],
+        body: BitString.from_list [255],
+      }
+
+      assert_eq (Fetch.body_text text_response) (Ok "hello")
+      case Fetch.body_text binary_response {
+        Ok _ -> assert_false True
+        Err _ -> assert_true True
+      }
+    })
+
+    test "classifies status codes" (fun () -> {
+      assert_true (Fetch.is_informational (response_with_status 100))
+      assert_true (Fetch.is_success (response_with_status 204))
+      assert_true (Fetch.is_redirect (response_with_status 302))
+      assert_true (Fetch.is_client_error (response_with_status 404))
+      assert_true (Fetch.is_server_error (response_with_status 503))
+      assert_false (Fetch.is_success (response_with_status 500))
+    })
+
+    test "expects status codes" (fun () -> {
+      let ok = response_with_status Fetch.status_ok
+      let not_found = response_with_status Fetch.status_not_found
+
+      assert_true (is_ok (Fetch.expect_status Fetch.status_ok ok))
+      assert_true (is_err (Fetch.expect_status Fetch.status_ok not_found))
+      assert_true (is_ok (Fetch.expect_success ok))
+      assert_true (is_err (Fetch.expect_success not_found))
+    })
+  })
+}
+
+fun response_with_status : Int -> Fetch.Response
+response_with_status status =
+  Fetch.Response {
+    status: status,
+    reason: "",
+    headers: [],
+    body: <<>>,
+  }
+
+is_ok result = case result {
+  Ok _ -> True
+  Err _ -> False
+}
+
+is_err result = case result {
+  Ok _ -> False
+  Err _ -> True
+}

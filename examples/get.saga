@@ -1,0 +1,11 @@
+module RataExample.Get
+
+import Rata.Fetch as Fetch
+import Rata.Fetch.Httpc as Httpc
+
+main () = {
+  case Fetch.get "https://example.com" {
+    Ok response -> dbg response.status
+    Err error -> dbg error
+  }
+} with Httpc.httpc

@@ -1,0 +1,87 @@
+module RataFetchMockTest
+
+import Rata.Fetch as Fetch
+import Rata.Fetch.Mock as Mock
+import Std.BitString as BitString
+import Std.Test (
+  Testing,
+  assert_eq,
+  assert_true,
+  describe,
+  test,
+)
+
+pub fun tests : Unit -> Unit needs {Testing}
+tests () = {
+  describe "Rata.Fetch.Mock" (fun () -> {
+    test "always returns the configured response" (fun () -> {
+      let response = Mock.text_response Fetch.status_ok "hello"
+      let mock = Mock.always response
+
+      case Fetch.get "https://example.com" with mock {
+        Ok got -> {
+          assert_eq got.status Fetch.status_ok
+          assert_eq (Fetch.content_type got) (Just "text/plain; charset=utf-8")
+          assert_eq (BitString.to_string got.body) (Ok "hello")
+        }
+        Err _ -> assert_true False
+      }
+    })
+
+    test "failing returns the configured error" (fun () -> {
+      let mock = Mock.failing Fetch.Timeout
+
+      case Fetch.get "https://example.com" with mock {
+        Err Fetch.Timeout -> assert_true True
+        _ -> assert_true False
+      }
+    })
+
+    test "routes match by method and exact URL" (fun () -> {
+      let get_response = Mock.text_response Fetch.status_ok "get"
+      let post_response = Mock.text_response Fetch.status_created "post"
+      let mock =
+        Mock.routes [
+          Mock.route_response Fetch.GET "https://example.com/items" get_response,
+          Mock.route_response Fetch.POST "https://example.com/items" post_response,
+        ]
+
+      case Fetch.get "https://example.com/items" with mock {
+        Ok got -> assert_eq (BitString.to_string got.body) (Ok "get")
+        Err _ -> assert_true False
+      }
+
+      case Fetch.post "https://example.com/items" Fetch.empty_body with mock {
+        Ok got -> assert_eq (BitString.to_string got.body) (Ok "post")
+        Err _ -> assert_true False
+      }
+    })
+
+    test "send performs a prebuilt fetch spec" (fun () -> {
+      let response = Mock.text_response Fetch.status_ok "sent"
+      let mock =
+        Mock.routes [
+          Mock.route_response Fetch.POST "https://example.com/send" response,
+        ]
+
+      let spec =
+        Fetch.post_spec "https://example.com/send" Fetch.empty_body
+          |> Fetch.with_accept "text/plain"
+
+      case Fetch.send spec with mock {
+        Ok got -> assert_eq (BitString.to_string got.body) (Ok "sent")
+        Err _ -> assert_true False
+      }
+    })
+
+    test "routes return an error when nothing matches" (fun () -> {
+      let mock = Mock.routes []
+
+      case Fetch.get "https://example.com/missing" with mock {
+        Err (Fetch.BackendError message) ->
+          assert_true (String.contains "GET https://example.com/missing" message)
+        _ -> assert_true False
+      }
+    })
+  })
+}

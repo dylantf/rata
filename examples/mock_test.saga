@@ -1,0 +1,17 @@
+module RataExample.MockTest
+
+import Rata.Fetch as Fetch
+import Rata.Fetch.Mock as Mock
+
+fun check_status : String -> Result Int Fetch.FetchError needs {Fetch.Fetch}
+check_status url = case Fetch.get url {
+  Ok response -> Ok response.status
+  Err error -> Err error
+}
+
+main () = {
+  let response = Mock.text_response Fetch.status_ok "ok"
+  let mock = Mock.always response
+
+  dbg (check_status "https://example.com" with mock)
+}

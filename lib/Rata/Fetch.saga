@@ -1,0 +1,313 @@
+#@ Backend-neutral HTTP fetch types, builders, helpers, and the `Fetch` effect.
+module Rata.Fetch
+
+import Std.BitString as BitString
+
+#@ HTTP method for an outbound fetch.
+pub type Method =
+  | GET
+  | POST
+  | PUT
+  | PATCH
+  | DELETE
+  | HEAD
+  | OPTIONS
+  deriving (Debug)
+
+#@ Outbound fetch body.
+pub type Body =
+  | Empty
+  | Bytes BitString
+  | Text String
+  deriving (Debug)
+
+#@ HTTP header name/value pair.
+pub record Header {
+  name: String,
+  value: String,
+} deriving (Debug)
+
+#@ Pure description of one outbound HTTP fetch.
+pub record FetchSpec {
+  method: Method,
+  url: String,
+  headers: List Header,
+  body: Body,
+  timeout_ms: Maybe Int,
+  follow_redirects: Maybe Bool,
+} deriving (Debug)
+
+#@ HTTP response returned by a successful transport fetch.
+pub record Response {
+  status: Int,
+  reason: String,
+  headers: List Header,
+  body: BitString,
+} deriving (Debug)
+
+#@ Transport, protocol, and backend failures while fetching.
+pub type FetchError =
+  | InvalidUrl String
+  | Timeout
+  | TlsError String
+  | ConnectionError String
+  | DnsError String
+  | ProtocolError String
+  | TooManyRedirects
+  | Unsupported String
+  | BackendError String
+  deriving (Debug)
+
+#@ Error returned by response status expectation helpers.
+pub type FetchStatusError =
+  | UnexpectedStatus (Int, Response)
+  deriving (Debug)
+
+#@ Effect for performing outbound HTTP fetches.
+pub effect Fetch {
+  fun fetch : FetchSpec -> Result Response FetchError
+}
+
+#@ Create a fetch spec with no headers, no body, and backend default options.
+pub fun empty_spec : Method -> String -> FetchSpec
+empty_spec method url = FetchSpec {
+  method: method,
+  url: url,
+  headers: [],
+  body: Empty,
+  timeout_ms: Nothing,
+  follow_redirects: Nothing,
+}
+
+#@ Create a GET fetch spec.
+pub fun get_spec : String -> FetchSpec
+get_spec url = empty_spec GET url
+
+#@ Create a POST fetch spec.
+pub fun post_spec : String -> Body -> FetchSpec
+post_spec url body = empty_spec POST url |> with_body body
+
+#@ Create a PUT fetch spec.
+pub fun put_spec : String -> Body -> FetchSpec
+put_spec url body = empty_spec PUT url |> with_body body
+
+#@ Create a PATCH fetch spec.
+pub fun patch_spec : String -> Body -> FetchSpec
+patch_spec url body = empty_spec PATCH url |> with_body body
+
+#@ Create a DELETE fetch spec.
+pub fun delete_spec : String -> FetchSpec
+delete_spec url = empty_spec DELETE url
+
+#@ Create a HEAD fetch spec.
+pub fun head_spec : String -> FetchSpec
+head_spec url = empty_spec HEAD url
+
+#@ Create an OPTIONS fetch spec.
+pub fun options_spec : String -> FetchSpec
+options_spec url = empty_spec OPTIONS url
+
+#@ Append one request header to a fetch spec.
+pub fun with_header : String -> String -> FetchSpec -> FetchSpec
+with_header name value spec =
+  { spec |
+    headers: List.append spec.headers [Header { name: name, value: value }],
+  }
+
+#@ Append many request headers to a fetch spec.
+pub fun with_headers : List Header -> FetchSpec -> FetchSpec
+with_headers headers spec = { spec | headers: List.append spec.headers headers }
+
+#@ Replace any existing header with the same case-insensitive name.
+pub fun set_header : String -> String -> FetchSpec -> FetchSpec
+set_header name value spec = {
+  let kept =
+    List.filter (fun header -> same_header_name name header.name
+      != True) spec.headers
+  { spec | headers: List.append kept [Header { name: name, value: value }] }
+}
+
+#@ Set the outbound body for a fetch spec.
+pub fun with_body : Body -> FetchSpec -> FetchSpec
+with_body body spec = { spec | body: body }
+
+#@ Set a per-fetch timeout in milliseconds.
+pub fun with_timeout : Int -> FetchSpec -> FetchSpec
+with_timeout timeout_ms spec = { spec | timeout_ms: Just timeout_ms }
+
+#@ Set whether the backend should follow redirects for this fetch.
+pub fun with_redirects : Bool -> FetchSpec -> FetchSpec
+with_redirects follow_redirects spec =
+  { spec | follow_redirects: Just follow_redirects }
+
+#@ Set the Accept header.
+pub fun with_accept : String -> FetchSpec -> FetchSpec
+with_accept value spec = set_header "accept" value spec
+
+#@ Set the Content-Type header.
+pub fun with_content_type : String -> FetchSpec -> FetchSpec
+with_content_type value spec = set_header "content-type" value spec
+
+#@ Perform a prebuilt fetch spec.
+pub fun send : FetchSpec -> Result Response FetchError needs {Fetch}
+send spec = fetch! spec
+
+#@ Perform a GET fetch.
+pub fun get : String -> Result Response FetchError needs {Fetch}
+get url = fetch! (get_spec url)
+
+#@ Perform a DELETE fetch.
+pub fun delete : String -> Result Response FetchError needs {Fetch}
+delete url = fetch! (delete_spec url)
+
+#@ Perform a HEAD fetch.
+pub fun head : String -> Result Response FetchError needs {Fetch}
+head url = fetch! (head_spec url)
+
+#@ Perform an OPTIONS fetch.
+pub fun options : String -> Result Response FetchError needs {Fetch}
+options url = fetch! (options_spec url)
+
+#@ Perform a POST fetch.
+pub fun post : String -> Body -> Result Response FetchError needs {Fetch}
+post url body = fetch! (post_spec url body)
+
+#@ Perform a PUT fetch.
+pub fun put : String -> Body -> Result Response FetchError needs {Fetch}
+put url body = fetch! (put_spec url body)
+
+#@ Perform a PATCH fetch.
+pub fun patch : String -> Body -> Result Response FetchError needs {Fetch}
+patch url body = fetch! (patch_spec url body)
+
+#@ Empty outbound body.
+pub fun empty_body : Body
+empty_body = Empty
+
+#@ UTF-8 text outbound body.
+pub fun text : String -> Body
+text value = Text value
+
+#@ Raw bytes outbound body.
+pub fun bytes : BitString -> Body
+bytes value = Bytes value
+
+#@ Convert an outbound body to bytes.
+pub fun body_to_bytes : Body -> BitString
+body_to_bytes body = case body {
+  Empty -> <<>>
+  Bytes value -> value
+  Text value -> BitString.from_string value
+}
+
+#@ Return the first response header matching the case-insensitive name.
+pub fun header : String -> Response -> Maybe String
+header name response = case List.find (fun h ->
+  same_header_name name h.name) response.headers {
+  Just h -> Just h.value
+  Nothing -> Nothing
+}
+
+#@ Return all response headers matching the case-insensitive name.
+pub fun headers : String -> Response -> List String
+headers name response =
+  response.headers
+  |> List.filter (fun h -> same_header_name name h.name)
+  |> List.map (fun h -> h.value)
+
+#@ Return the Content-Type response header if present.
+pub fun content_type : Response -> Maybe String
+content_type response = header "content-type" response
+
+#@ Return the parsed Content-Length response header if present and valid.
+pub fun content_length : Response -> Maybe Int
+content_length response = case header "content-length" response {
+  Just value -> Int.parse value
+  Nothing -> Nothing
+}
+
+#@ Decode the response body as UTF-8 text.
+pub fun body_text : Response -> Result String String
+body_text response = BitString.to_string response.body
+
+#@ True when the response status is 100-199.
+pub fun is_informational : Response -> Bool
+is_informational response = response.status >= 100 && response.status <= 199
+
+#@ True when the response status is 200-299.
+pub fun is_success : Response -> Bool
+is_success response = response.status >= 200 && response.status <= 299
+
+#@ True when the response status is 300-399.
+pub fun is_redirect : Response -> Bool
+is_redirect response = response.status >= 300 && response.status <= 399
+
+#@ True when the response status is 400-499.
+pub fun is_client_error : Response -> Bool
+is_client_error response = response.status >= 400 && response.status <= 499
+
+#@ True when the response status is 500-599.
+pub fun is_server_error : Response -> Bool
+is_server_error response = response.status >= 500 && response.status <= 599
+
+#@ Require an exact response status.
+pub fun expect_status : Int -> Response -> Result Response FetchStatusError
+expect_status status response =
+  if response.status == status then Ok response
+  else Err (UnexpectedStatus (status, response))
+
+#@ Require a successful 200-299 response status.
+pub fun expect_success : Response -> Result Response FetchStatusError
+expect_success response =
+  if is_success response then Ok response
+  else Err (UnexpectedStatus (status_ok, response))
+
+#@ HTTP 200 OK.
+pub fun status_ok : Int
+status_ok = 200
+
+#@ HTTP 201 Created.
+pub fun status_created : Int
+status_created = 201
+
+#@ HTTP 204 No Content.
+pub fun status_no_content : Int
+status_no_content = 204
+
+#@ HTTP 400 Bad Request.
+pub fun status_bad_request : Int
+status_bad_request = 400
+
+#@ HTTP 401 Unauthorized.
+pub fun status_unauthorized : Int
+status_unauthorized = 401
+
+#@ HTTP 403 Forbidden.
+pub fun status_forbidden : Int
+status_forbidden = 403
+
+#@ HTTP 404 Not Found.
+pub fun status_not_found : Int
+status_not_found = 404
+
+#@ HTTP 409 Conflict.
+pub fun status_conflict : Int
+status_conflict = 409
+
+#@ HTTP 429 Too Many Requests.
+pub fun status_too_many_requests : Int
+status_too_many_requests = 429
+
+#@ HTTP 500 Internal Server Error.
+pub fun status_internal_server_error : Int
+status_internal_server_error = 500
+
+#@ HTTP 502 Bad Gateway.
+pub fun status_bad_gateway : Int
+status_bad_gateway = 502
+
+#@ HTTP 503 Service Unavailable.
+pub fun status_service_unavailable : Int
+status_service_unavailable = 503
+
+same_header_name left right = String.to_lower left == String.to_lower right

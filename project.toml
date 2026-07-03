@@ -1,0 +1,16 @@
+[project]
+name = "rata"
+
+[bin]
+main = "src/Main.saga"
+
+[library]
+module = "Rata"
+expose = [
+  "Rata.Fetch",
+  "Rata.Fetch.Httpc",
+  "Rata.Fetch.Mock",
+]
+
+# [deps]
+# some-lib = { path = "../some-lib" }

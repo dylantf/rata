@@ -1,0 +1,29 @@
+module RataFetchHttpcTest
+
+import Rata.Fetch as Fetch
+import Rata.Fetch.Httpc as Httpc
+import Std.Test (
+  Testing,
+  assert_true,
+  describe,
+  test,
+)
+
+pub fun tests : Unit -> Unit needs {Testing}
+tests () = {
+  describe "Rata.Fetch.Httpc" (fun () -> {
+    test "maps invalid URLs without making a network request" (fun () -> {
+      case Httpc.request (Fetch.get_spec "not a url") {
+        Err (Fetch.InvalidUrl _) -> assert_true True
+        _ -> assert_true False
+      }
+    })
+
+    test "maps unsupported URL schemes without making a network request" (fun () -> {
+      case Httpc.request (Fetch.get_spec "ftp://example.com/file") {
+        Err (Fetch.Unsupported _) -> assert_true True
+        _ -> assert_true False
+      }
+    })
+  })
+}
