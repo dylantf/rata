@@ -2,8 +2,7 @@
 
 A how-to for making HTTP requests from Saga code with Rata. The intended
 consumer is an application or library author who wants a typed HTTP client on
-the BEAM. Rata handles outbound HTTP transport; parsing JSON, routing, cookies,
-and application protocols live above it.
+the BEAM. Rata handles outbound HTTP transport.
 
 For language syntax see
 [`llms-full.txt`](../../../saga-website/public/llms-full.txt).
@@ -41,9 +40,8 @@ Rata handles:
 - mapping transport/backend failures into `FetchError`,
 - testing `needs {Fetch}` code without network access.
 
-Rata does not decode JSON, parse URLs into application routes, manage cookies,
-or expose a web framework request type. Response bodies are `BitString` values;
-use your JSON library or application decoder for structured data.
+Response bodies are `BitString` values; pass them to your JSON library or
+application decoder for structured data.
 
 ## Install
 

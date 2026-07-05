@@ -1,0 +1,34 @@
+{
+  "sections": [
+    {
+      "slug": "getting-started",
+      "title": "Getting started",
+      "description": "Install Rata, make your first typed request, and choose a backend handler at the boundary.",
+      "group": "guide"
+    },
+    {
+      "slug": "requests",
+      "title": "Requests",
+      "description": "The fetch model: FetchSpec, methods, and the get, post, and send helpers.",
+      "group": "guide"
+    },
+    {
+      "slug": "responses",
+      "title": "Responses",
+      "description": "The Response record, status helpers like expect_success, and reading headers and body bytes.",
+      "group": "guide"
+    },
+    {
+      "slug": "backends",
+      "title": "Backends",
+      "description": "The backend-neutral Fetch effect, the Httpc backend over OTP inets, and TLS defaults.",
+      "group": "guide"
+    },
+    {
+      "slug": "testing",
+      "title": "Testing",
+      "description": "Rata.Fetch.Mock for tests: always, failing, and route matching without hitting the network.",
+      "group": "guide"
+    }
+  ]
+}
